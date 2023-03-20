@@ -5,68 +5,55 @@ pragma abicoder v2;
 
 contract ThriftStore {
 
-    struct UserInfo {
-        string userName;
-        bytes32 passHash;
-        address accountAddress;
-        uint256 adoptedNum;
-        uint256 userNameIndex;
+    // User struct user ID, password and their address
+    struct User {
+        string userId;
+        bytes32 passwordHash;
+        address userAccountAddress;
     }
 
-    // longitude = (longitude from js) * 10^6
-    // latitude = (latitude from js) * 10^6
-    struct AnimalInfo {
-        uint256 animalID;
-        string longitude;
-        string latitude;
-        string contactUserName;
-        uint64 price;
-        string imageBase64;
-        string title;
-        string description;
-        // status = "MISSING", "FOUND"
-        string status;
+    // OrderInfo struct has information of items posted by the sellers
+    struct OrderInfo {
+        uint256 orderID;
+        string contactUserName;  // Not sure
+        uint64 orderPrice;
+        //string imageBase64;
+        string orderName;
+        string orderDescription;
+        string status;  // status = "MISSING", "FOUND"
         address payable seller;
         string time;
-        string physicalAddress;
+        string orderPickupAddress;
     }
 
+    // Not sure if we need to keep all transactions info
     struct TransactionInfo {
         address from;
         address to;
-        string fromUser;
-        string toUser;
+        //string fromUser;
+        //string toUser;
         string time;
-        uint256 animalIndex;
-        string animalTitle;
-        uint64 animalPrice;
+        uint256 orderID;
+        uint64 orderPrice;
     }
 
-    // user address to user information
-    mapping (address => UserInfo) users;
-    // user address to username
-    mapping (address => bytes32) activeUsers;
+    // Mapping of the seller address to information of all their orders
+    mapping (address => OrderInfo[]) users;
+    // User address to username
+    mapping (address => bytes32) activeUsers;            // WHY?
     // user address to user related transaction information
-    mapping (address => TransactionInfo[]) transRecords;
+    // mapping (address => TransactionInfo[]) transRecords;
     // user address to user related posted animal information
-    mapping (address => AnimalInfo[]) postAnimalRecords;
 
-    // all animal information
-    AnimalInfo[] animalInfos;
-
-    // all existing user name
-    string[] userNames;
+    // All existing user IDs
+    string[] existingUserID;
 
     // Events
-    // eventType = "ANIMAL_INFO_OPS", "USER_ACTIVE", "TRANSACTION", "REGISTRATION", "LOGOUT", "PASSWORD_RESET", "USERNAME_RESET"
+    // We can decide what events we want to keep
     event OperationEvents(string eventType, string eventMsg, bool success);
     event AcquireUserInfo(string userName, address addr);
     event LoginEvent(bytes32 uuid, string eventMsg, bool success);
     event TransactionRecords(TransactionInfo[] records, string eventMsg, bool success);
-
-    function payment() public payable {
-
-    }
 
     function getAdoptedNum(bytes32 uuid) public view returns(uint256) {
         UserInfo storage user = users[msg.sender];
