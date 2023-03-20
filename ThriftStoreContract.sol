@@ -5,22 +5,22 @@ pragma abicoder v2;
 
 contract ThriftStore {
 
-    // User struct user ID, password and their address
+   // User struct user ID, password and their address
     struct User {
         string userId;
         bytes32 passwordHash;
         address userAccountAddress;
     }
 
-    // OrderInfo struct has information of items posted by the sellers
-    struct OrderInfo {
-        uint256 orderID;
+    // ItemInfo struct has information of items posted by the sellers
+    struct ItemInfo {
+        uint256 itemID;
         string contactUserName;  // Not sure
-        uint64 orderPrice;
+        uint64 itemPrice;
         //string imageBase64;
-        string orderName;
+        string itemName;
         string orderDescription;
-        string status;  // status = "MISSING", "FOUND"
+        string soldStatus; 
         address payable seller;
         string time;
         string orderPickupAddress;
@@ -38,7 +38,9 @@ contract ThriftStore {
     }
 
     // Mapping of the seller address to information of all their orders
-    mapping (address => OrderInfo[]) users;
+    mapping (address => ItemInfo[]) users;
+    // Map the itemId to its owner
+    mapping(uint256 => address) sellers;
     // User address to username
     mapping (address => bytes32) activeUsers;            // WHY?
     // user address to user related transaction information
@@ -48,12 +50,29 @@ contract ThriftStore {
     // All existing user IDs
     string[] existingUserID;
 
+    // Modifier to check a valid item
+    modifier validItem(uint256 id) {
+        require(!id.soldStatus,"The item does not exist or has been sold");
+        _;
+    }
+
     // Events
     // We can decide what events we want to keep
     event OperationEvents(string eventType, string eventMsg, bool success);
     event AcquireUserInfo(string userName, address addr);
     event LoginEvent(bytes32 uuid, string eventMsg, bool success);
     event TransactionRecords(TransactionInfo[] records, string eventMsg, bool success);
+
+
+    function buyItem(uint256 id) public validItem {
+
+        // Login condition?
+        uint64 price = id.itemPrice;
+        require(msg.value >= price, "You don't have enough ether");
+
+        payable(sellers[id].transfer(price));
+
+    }
 
     function getAdoptedNum(bytes32 uuid) public view returns(uint256) {
         UserInfo storage user = users[msg.sender];
