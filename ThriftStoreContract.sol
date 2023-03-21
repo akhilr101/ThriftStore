@@ -3,56 +3,59 @@
 pragma solidity ^0.8.9;
 pragma abicoder v2;
 
-contract ThriftStore {
+contract ThriftStoreContract {
 
-   // User struct user ID, password and their address
+    // We need to check whether this will work to generate itemId
+    uint64 idCounter = 0;
+
+    // User struct user ID, password and their address
     struct User {
         string userId;
         bytes32 passwordHash;
-        address userAccountAddress;
+        address userAccountAddress;  // check it later
     }
+
+    enum SoldStatus {POSTED, SOLD, REMOVED}
+    enum RefundStatus {NONE, REQUESTED, DENIED, ACCEPTED}
 
     // ItemInfo struct has information of items posted by the sellers
     struct ItemInfo {
-        uint256 itemID;
-        string contactUserName;  // Not sure
+        //string contactUserName;  // Not sure
         uint64 itemPrice;
-        //string imageBase64;
+        //string imageBase64;  // We can think of adding an image with the ad
         string itemName;
-        string orderDescription;
-        string soldStatus; 
-        address payable seller;
-        string time;
+        string itemDescription;
+        SoldStatus soldStatus;
+        //address payable seller;
+        uint256 time;
+        RefundStatus refundStatus;
         string orderPickupAddress;
     }
 
     // Not sure if we need to keep all transactions info
     struct TransactionInfo {
-        address from;
-        address to;
-        //string fromUser;
-        //string toUser;
-        string time;
-        uint256 orderID;
-        uint64 orderPrice;
+        //address seller;
+        address buyer;
+        uint256 time;
+        uint256 itemID;    // Need to check if it is redundant to add order id here
+        uint64 itemPrice;
     }
 
-    // Mapping of the seller address to information of all their orders
-    mapping (address => ItemInfo[]) users;
-    // Map the itemId to its owner
+    // Map the itemId to the owner/seller
     mapping(uint256 => address) sellers;
+    
+    // Map itemId to its info
+    mapping(uint256 => ItemInfo) items;
+    
+    // Map item id to its Transaction info
+    mapping(uint256 => TransactionInfo) transactions;
+    
     // User address to username
-    mapping (address => bytes32) activeUsers;            // WHY?
-    // user address to user related transaction information
-    // mapping (address => TransactionInfo[]) transRecords;
-    // user address to user related posted animal information
-
-    // All existing user IDs
-    string[] existingUserID;
+    mapping (address => bytes32) activeUsers; // NOT SURE if we are gonna keep this
 
     // Modifier to check a valid item
     modifier validItem(uint256 id) {
-        require(!id.soldStatus,"The item does not exist or has been sold");
+        require(items[id].soldStatus == SoldStatus.POSTED, "The item does not exist or has been sold");
         _;
     }
 
@@ -63,289 +66,85 @@ contract ThriftStore {
     event LoginEvent(bytes32 uuid, string eventMsg, bool success);
     event TransactionRecords(TransactionInfo[] records, string eventMsg, bool success);
 
+    // Helper function to send ethers between users
+    function sendEther(address payable recipient, uint256 amount) public {
+        
+        address sender = msg.sender;
+        recipient.transfer(amount);
+    }
 
-    function buyItem(uint256 id) public validItem {
+    // Function to buy an item that has been posted in the marketplace
+    function buyItem(uint256 id) public payable validItem(id) {
 
         // Login condition?
-        uint64 price = id.itemPrice;
+        uint64 price = items[id].itemPrice;
+
+        // Condition to make sure buyer has enough ether
         require(msg.value >= price, "You don't have enough ether");
 
-        payable(sellers[id].transfer(price));
+        sendEther(payable(sellers[id]), price);
 
+        uint256 executionTime = block.timestamp;
+
+        // Saving the information in transactions
+        transactions[id] = TransactionInfo(msg.sender, executionTime, id, price);
+        // Updating the status of the ad
+        items[id].soldStatus = SoldStatus.SOLD;
     }
 
-    function getAdoptedNum(bytes32 uuid) public view returns(uint256) {
-        UserInfo storage user = users[msg.sender];
-        return user.adoptedNum;
-    }
+    // Function to post an ad on the marketplace
+    function postAd(string calldata itemName, string calldata itemDescription, uint64 itemPrice, string calldata senderAddress) public {
 
-    function resetUserName(string memory newName, bytes32 uuid) public returns(bool) {
-        if (!checkUUID(msg.sender, uuid)) {
-            emit OperationEvents("USER_ACTIVE", "User is not login, request is refused", false);
-            return false;
-        }
-        UserInfo storage user = users[msg.sender];
-        user.userName = newName;
-        emit OperationEvents("USERNAME_RESET", "Username reset success!", true);
-        return true;
-    }
+        // Checking that the user posts all the required information
+        require(bytes(itemName).length > 0,"You must add a name");
+        require(bytes(itemDescription).length > 0,"You must add a description");
+        require(bytes(senderAddress).length > 0,"You must add your address");
+        require(itemPrice >= 0,"You must set a price");
 
-    function getMyBalance(bytes32 uuid) public returns(bool, string memory, uint256) {
-        if (!checkUUID(msg.sender, uuid)) {
-            emit OperationEvents("USER_ACTIVE", "User is not login, request is refused", false);
-            return (false, "Get user balance failed!", 0);
-        }
-        return (true, "Get user balance success!", msg.sender.balance);
-    }
+        uint256 executionTime = block.timestamp;
 
-    // Get user transaction records
-    function getTransRecords(bytes32 uuid) public returns(TransactionInfo[] memory, string memory, bool, uint256) {
-        if (!checkUUID(msg.sender, uuid)) {
-            emit OperationEvents("USER_ACTIVE", "User is not login, request is refused", false);
-            TransactionInfo[] memory tmp;
-            return (tmp, "Get transactions failed!", false, 0);
-        }
-        return (transRecords[msg.sender], "Get transactions!", true, transRecords[msg.sender].length);
-    }
-
-    // function getOneAnimalInfo(uint256 _index, bytes32 uuid) public returns(AnimalInfo memory, string memory, bool) {
-    //     if (!checkUUID(msg.sender, uuid)) {
-    //         emit OperationEvents("USER_ACTIVE", "User is not login, request is refused", false);
-    //         AnimalInfo memory tmp;
-    //         return (tmp, "Get animal info failed!", false);
-    //     }
-    //     return (animalInfos[_index], "Get one animal info!", true);
-    // }
-
-    function getPostedAnimal(bytes32 uuid) public returns(AnimalInfo[] memory, string memory, bool, uint256) {
-        if (!checkUUID(msg.sender, uuid)) {
-            emit OperationEvents("USER_ACTIVE", "User is not login, request is refused", false);
-            AnimalInfo[] memory tmp;
-            return (tmp, "Get animal info failed!", false, 0);
-        }
-        return (postAnimalRecords[msg.sender], "Get posted animal information!", true, postAnimalRecords[msg.sender].length);
-    }
-
-    // Reset password
-    function resetPassword(string memory _old_password, string memory _new_password, bytes32 uuid) public returns(bool) {
-        if (!checkUUID(msg.sender, uuid)) {
-            emit OperationEvents("USER_ACTIVE", "User is not login, request is refused", false);
-            return false;
-        }
-        bytes32 new_pass_hash = hash(_new_password);
-        bytes32 old_pass_hash = hash(_old_password);
-        UserInfo storage user = users[msg.sender];
-        if (old_pass_hash != user.passHash) {
-            emit OperationEvents("PASSWORD_RESET", "Old password does not match!", false);
-            return false;
-        }
-        user.passHash = new_pass_hash;
-        emit OperationEvents("PASSWORDRESET", "Password reset success!", true);
-        return true;
-    }
-
-    // User operation funcs
-    function logout(bytes32 uuid) public {
-        if (!checkUUID(msg.sender, uuid)) {
-            emit OperationEvents("USER_ACTIVE", "User is not login, request is refused", false);
-            return;
-        }
-        delete activeUsers[msg.sender];
-        emit OperationEvents("LOGOUT", "User should be logout", true);
-    }
-
-    function getAnimalNearBy(int64 top, int64 bottom, int64 left, int64 right, int64 radius, bytes32 uuid) public returns(AnimalInfo[] memory, uint256, bool) {
-        if (!checkUUID(msg.sender, uuid)) {
-            emit OperationEvents("USER_ACTIVE", "User is not login, request is refused", false);
-            AnimalInfo[] memory tmp;
-            return (tmp, 0, false);
-        }
-        return (animalInfos, animalInfos.length, true);
-    }
-
-    // function depositPayment(uint256 _index) public payable {
-    //     AnimalInfo storage animal = animalInfos[_index];
+        // Updating the counter to generate the new itemId
+        idCounter = idCounter+1;
         
-    // }
+        sellers[idCounter] = msg.sender;
 
-    function adoptAnimal(uint256 _index, string memory _time, bytes32 uuid) public payable returns(bool) {
-        if (!checkUUID(msg.sender, uuid)) {
-            emit OperationEvents("USER_ACTIVE", "User is not login, request is refused", false);
-            msg.sender.transfer(msg.value);
-            return false;
-        }
-        AnimalInfo storage animal = animalInfos[_index];
-        if (!compareStrings(animal.status, "MISSING")) {
-            emit OperationEvents("TRANSACTION", "Requested animal has already been adopted!", false);
-            msg.sender.transfer(msg.value);
-            return false;
-        }
-
-        address _sender = msg.sender;
-        uint256 buyerBalance = _sender.balance;
-        if (buyerBalance < msg.value) {
-            emit OperationEvents("TRANSACTION", "Buyer has insufficient fund for this payment!", false);
-            msg.sender.transfer(msg.value);
-            return false;
-        }
-
-        // if (msg.value < animal.price) {
-        //     emit OperationEvents("TRANSACTION", "Buyer has not payed enough ether for this payment!", false);
-        //     return false;
-        // }
-
-        
-
-        UserInfo storage userInfo = users[msg.sender];
-
-        if (compareStrings(userInfo.userName, animal.contactUserName)) {
-            emit OperationEvents("TRANSACTION", "Cannot adopt your own animal!", false);
-            msg.sender.transfer(msg.value);
-            return false;
-        }
-
-        animal.status = "FOUND";
-        TransactionInfo memory trans;
-        trans.time = _time;
-        trans.fromUser = userInfo.userName;
-        trans.from = msg.sender;
-        trans.toUser = animal.contactUserName;
-        trans.to = animal.seller;
-        trans.animalIndex = _index;
-        trans.time = animal.time;
-        trans.animalTitle = animal.title;
-        trans.animalPrice = animal.price;
-        transRecords[msg.sender].push(trans);
-        transRecords[animal.seller].push(trans);
-        userInfo.adoptedNum++;
-    
-        animal.seller.transfer(msg.value);
-        emit OperationEvents("TRANSACTION", "Transaction success!", true);
-        return true;
-        
+        items[idCounter] = ItemInfo(itemPrice, itemName, itemDescription, SoldStatus.POSTED, executionTime, RefundStatus.NONE, senderAddress);     
     }
 
-    function postAnimalInfo(string memory _longitude, string memory _latitude, uint64 _price, string memory _imageBase64, string memory _title, string memory _description, string memory _time, string memory _physicalAddress, bytes32 uuid) public returns(bool) {
-        if (!checkUUID(msg.sender, uuid)) {
-            emit OperationEvents("USER_ACTIVE", "User is not login, request is refused", false);
-            return false;
-        }
+    // Function to remove an ad posted by the seller
+    function removeAd(uint256 id) public {
+        require(sellers[id] == msg.sender, "Only the seller can remove the ad");
+        require(items[id].soldStatus == SoldStatus.POSTED, "This item has already been sold or removed");
 
-        for (uint256 i = 0; i < animalInfos.length; i++) {
-            if (compareStrings(animalInfos[i].longitude, _longitude)) {
-                if (compareStrings(animalInfos[i].latitude, _latitude)) {
-                    emit OperationEvents("ANIMAL_INFO_OPS", "Duplicate location!", false);
-                    return false;
-                }
-                
-            }
-        }
-
-        UserInfo storage userInfo = users[msg.sender];
-
-        AnimalInfo memory info;
-        info.animalID = animalInfos.length;
-        info.longitude = _longitude;
-        info.latitude = _latitude;
-        info.price = _price;
-        info.imageBase64 = _imageBase64;
-        info.title = _title;
-        info.description = _description;
-        info.status = "MISSING";
-        info.seller = msg.sender;
-        info.contactUserName = userInfo.userName;
-        info.time = _time;
-        info.physicalAddress = _physicalAddress;
-        
-        animalInfos.push(info);
-        postAnimalRecords[msg.sender].push(info);
-        // uint256 loc = animalInfos.length - 1;
-        // uint256[] storage animalSerial = userInfo.postedAnimalIndex;
-        // animalSerial.push(loc);
-        emit OperationEvents("ANIMAL_INFO_OPS", "Animal information added successfully!", true);
-        return true;
+        items[id].soldStatus = SoldStatus.REMOVED;
     }
 
-    function getUserName(bytes32 uuid) public returns(bool, string memory, address) {
-        if (!checkUUID(msg.sender, uuid)) {
-            return (false, "User is not login, request is refused", msg.sender);
-        }
-        return (true, users[msg.sender].userName, msg.sender);
+    // Function to allow buyer to request a refund
+    function requestRefund(uint256 id) public {
+
+        require(items[id].soldStatus == SoldStatus.SOLD, "The item has not been sold yet");
+        require(transactions[id].buyer == msg.sender, "Only the buyer can request a refund");
+
+        // Update the refund status
+        items[id].refundStatus = RefundStatus.REQUESTED;
     }
 
-    function register(string memory _userName, string memory _password) public returns(bool) {
-        UserInfo storage user = users[msg.sender];
-        if (!compareStrings(user.userName, "")) {
-            OperationEvents("REGISTRATION", "There is an existing user!", false);
-            return false;
-        }
+    // Function to allow the seller to accept or reject the refund
+    function respondToRefundRequest(uint256 id, bool refund) public {
 
-        for (uint256 i = 0; i < userNames.length; i++) {
-            if (compareStrings(userNames[i], _userName)) {
-                 OperationEvents("REGISTRATION", "There is an existing user name!", false);
-                 return false;
-            }
-        }
-        userNames.push(_userName);
+        require(items[id].soldStatus == SoldStatus.SOLD, "The item has not been sold yet");
+        require(items[id].refundStatus == RefundStatus.REQUESTED, "The buyer did not request a refund");
+        require(sellers[id] == msg.sender, "Only the seller can approve a refund");
 
-        user.userNameIndex = userNames.length - 1;
-        user.userName = _userName;
-        user.passHash = hash(_password);
-        user.accountAddress = msg.sender;
-        UserInfo storage newUser = users[msg.sender];
-        if (compareStrings(newUser.userName, _userName)) {
-            emit OperationEvents("REGISTRATION", "Registeration succeed!", true);
-            return true;
+        if (refund) { 
+            sendEther(payable(transactions[id].buyer), items[id].itemPrice);
+
+            // Update status of the item
+            items[id].refundStatus = RefundStatus.ACCEPTED;
+            items[id].soldStatus = SoldStatus.POSTED;
         }
-        emit OperationEvents("REGISTRATION", "Registeration failed with unknown error!", false);
-        return false;
+        else
+            items[id].refundStatus = RefundStatus.DENIED;
     }
 
-    function login(string memory userName, string memory password, string memory timestamp) public returns(bool) {
-        if (activeUsers[msg.sender] != 0) {
-            emit LoginEvent('0', "User already login!", false);
-            return false;
-        }
-        string memory currUserName = users[msg.sender].userName;
-        bytes32 currPassword = users[msg.sender].passHash;
-        if (currPassword == hash(password) && compareStrings(currUserName, userName)) {
-            bytes memory uuid_b = abi.encode(userName);
-            uuid_b = abi.encode(uuid_b, timestamp);
-            bytes32 uuid = keccak256(uuid_b);
-            activeUsers[msg.sender] = uuid;
-            emit LoginEvent(uuid, "Login success!", true);
-            return true;
-        }
-        emit LoginEvent('0', "Wrong username or password!", false);
-        return false;
-    }
-
-    // Helper funcs
-    function checkUUID(address _accountAddr, bytes32 uuid) public view returns(bool) {
-        bytes32 currUUID = activeUsers[_accountAddr];
-        if (currUUID == uuid) {
-            return true;
-        }
-        return false;
-    }
-
-    function compareStrings(string memory a, string memory b) public pure returns (bool) {
-        return (keccak256(abi.encode((a))) == keccak256(abi.encode((b))));
-    }
-
-    function hash(string memory str) public pure returns(bytes32) {
-        return keccak256(abi.encode(str));
-    }
-
-    function bytes32ToString(bytes32 _bytes32) public pure returns (string memory) {
-        uint8 i = 0;
-        while(i < 32 && _bytes32[i] != 0) {
-            i++;
-        }
-        bytes memory bytesArray = new bytes(i);
-        for (i = 0; i < 32 && _bytes32[i] != 0; i++) {
-            bytesArray[i] = _bytes32[i];
-        }
-        return string(bytesArray);
-    }
 }
