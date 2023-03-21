@@ -67,28 +67,27 @@ contract ThriftStoreContract {
     event TransactionRecords(TransactionInfo[] records, string eventMsg, bool success);
 
     // Helper function to send ethers between users
-    function sendEther(address payable recipient, uint256 amount) public {
-        
-        address sender = msg.sender;
-        recipient.transfer(amount);
+    function sendEther(address payable recipient, uint256 amount) internal {
+            recipient.transfer(amount);
     }
+
 
     // Function to buy an item that has been posted in the marketplace
     function buyItem(uint256 id) public payable validItem(id) {
-
-        // Login condition?
         uint64 price = items[id].itemPrice;
-
-        // Condition to make sure buyer has enough ether
         require(msg.value >= price, "You don't have enough ether");
 
-        sendEther(payable(sellers[id]), price);
+        require(items[id].soldStatus != SoldStatus.SOLD, "Item is already sold");
+
+        // Transfer ether to seller
+        payable(sellers[id]).transfer(price);
 
         uint256 executionTime = block.timestamp;
 
         // Saving the information in transactions
         transactions[id] = TransactionInfo(msg.sender, executionTime, id, price);
-        // Updating the status of the ad
+
+        // Updating the status of the item
         items[id].soldStatus = SoldStatus.SOLD;
     }
 
