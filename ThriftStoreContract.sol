@@ -93,7 +93,7 @@ contract ThriftStoreContract {
     }
 
     // Function to post an ad on the marketplace
-    function postAd(string calldata itemName, string calldata itemDescription, uint64 itemPrice, string calldata senderAddress) public {
+    function postAd(string memory itemName, string memory itemDescription, uint64 itemPrice, string memory senderAddress) public {
 
         // Checking that the user posts all the required information
         require(bytes(itemName).length > 0,"You must add a name");
